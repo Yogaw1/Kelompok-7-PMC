@@ -1,72 +1,9 @@
 #include "api.h"
 #include "crypto_aead.h"
-
+#include <string.h>
 #include "elephant_200.h"
-
-#define CRYPTO_BYTES 64
-
-int main (int argc, char *argv[]) {
-
-
-  unsigned long long mlen;
-  unsigned long long clen;
-
-  unsigned char plaintext[CRYPTO_BYTES];
-  unsigned char cipher[CRYPTO_BYTES]; 
-  unsigned char npub[CRYPTO_NPUBBYTES]="";
-  unsigned char ad[CRYPTO_ABYTES]="1234";
-  unsigned char nsec[CRYPTO_ABYTES]="";
-  
-  unsigned char key[CRYPTO_KEYBYTES];
-
-  char pl[CRYPTO_BYTES]="hello";
-  char chex[CRYPTO_BYTES]="";
-  char keyhex[2*CRYPTO_KEYBYTES+1]="0123456789ABCDEF0123456789ABCDEF";
-  char nonce[2*CRYPTO_NPUBBYTES+1]="000000000000111111111111";
-
-  if( argc > 1 ) {
-      strcpy(pl,argv[1]);
-  }
-  if( argc > 2 ) {
-      strcpy(keyhex,argv[2]);
-  }
-
-
-  strcpy(plaintext,pl);
-  ascii2byte(keyhex,key);
-  ascii2byte(nonce,npub);
-
-  printf("Elephant light-weight cipher\n");
-  printf("Plaintext: %s\n",plaintext);
-  printf("Key: %s\n",keyhex);
-  printf("Nonce: %s\n",nonce);
-  printf("Additional Information: %s\n\n",ad);
-
-  printf("Plaintext: %s\n",plaintext);
-
-  int ret = crypto_aead_encrypt(cipher,&clen,plaintext,strlen(plaintext),ad,strlen(ad),"",npub,key);
-
-
-string2hexString(cipher,clen,chex);
-
-  printf("Cipher: %s, Len: %llu\n",chex, clen);
-
-
-
-  ret = crypto_aead_decrypt(plaintext,&mlen,nsec,cipher,clen,ad,strlen(ad),npub,key);
-
-  printf("Plaintext: %s, Len: %llu\n",plaintext, mlen);
-
-
-
-
-  if (ret==0) {
-    printf("Success!\n");
-  }  
- 
-	return 0;
-} 
-
+#include <stdlib.h> //
+#include <stdio.h> //
 
 BYTE rotl(BYTE b)
 {
@@ -79,7 +16,7 @@ int constcmp(const BYTE* a, const BYTE* b, SIZE length)
 
     for (SIZE i = 0; i < length; ++i)
         r |= a[i] ^ b[i];
-    return r; 
+    return r;
 }
 
 // State should be BLOCK_SIZE bytes long
@@ -131,8 +68,8 @@ void get_ad_block(BYTE* output, const BYTE* ad, SIZE adlen, const BYTE* npub, SI
     }
 }
 
-// Return the ith ciphertext block.
-// clen is the length of the ciphertext in bytes 
+// Return the ith assocated data block.
+// clen is the length of the ciphertext in bytes
 void get_c_block(BYTE* output, const BYTE* c, SIZE clen, SIZE i)
 {
     const SIZE block_offset = i * BLOCK_SIZE;
@@ -159,12 +96,12 @@ void get_c_block(BYTE* output, const BYTE* c, SIZE clen, SIZE i)
 void crypto_aead_impl(
     BYTE* c, BYTE* tag, const BYTE* m, SIZE mlen, const BYTE* ad, SIZE adlen,
     const BYTE* npub, const BYTE* k, int encrypt)
-{ 
+{
     // Compute number of blocks
     const SIZE nblocks_c  = 1 + mlen / BLOCK_SIZE;
     const SIZE nblocks_m  = (mlen % BLOCK_SIZE) ? nblocks_c : nblocks_c - 1;
     const SIZE nblocks_ad = 1 + (CRYPTO_NPUBBYTES + adlen) / BLOCK_SIZE;
-    const SIZE nb_it = (nblocks_c > nblocks_ad) ? nblocks_c : nblocks_ad + 1;
+    const SIZE nb_it = (nblocks_c + 1 > nblocks_ad - 1) ? nblocks_c + 1 : nblocks_ad - 1;
 
     // Storage for the expanded key L
     BYTE expanded_key[BLOCK_SIZE] = {0};
@@ -181,53 +118,53 @@ void crypto_aead_impl(
     BYTE* current_mask = mask_buffer_2;
     BYTE* next_mask = mask_buffer_3;
 
-    // Buffer to store current ciphertext block
-    BYTE c_buffer[BLOCK_SIZE];
-    
+    // Buffer to store current ciphertext/AD block
+    BYTE buffer[BLOCK_SIZE];
+
     // Tag buffer and initialization of tag to zero
     BYTE tag_buffer[BLOCK_SIZE] = {0};
-    memset(tag, 0, CRYPTO_ABYTES);
+    get_ad_block(tag_buffer, ad, adlen, npub, 0);
 
     SIZE offset = 0;
     for(SIZE i = 0; i < nb_it; ++i) {
         // Compute mask for the next message
         lfsr_step(next_mask, current_mask);
-        
         if(i < nblocks_m) {
             // Compute ciphertext block
-            memcpy(c_buffer, npub, CRYPTO_NPUBBYTES);
-            memset(c_buffer + CRYPTO_NPUBBYTES, 0, BLOCK_SIZE - CRYPTO_NPUBBYTES);
-            xor_block(c_buffer, current_mask, BLOCK_SIZE);
-            permutation(c_buffer);
-            xor_block(c_buffer, current_mask, BLOCK_SIZE);
+            memcpy(buffer, npub, CRYPTO_NPUBBYTES);
+            memset(buffer + CRYPTO_NPUBBYTES, 0, BLOCK_SIZE - CRYPTO_NPUBBYTES);
+            xor_block(buffer, current_mask, BLOCK_SIZE);
+            xor_block(buffer, next_mask, BLOCK_SIZE);
+            permutation(buffer);
+            xor_block(buffer, current_mask, BLOCK_SIZE);
+            xor_block(buffer, next_mask, BLOCK_SIZE);
             const SIZE r_size = (i == nblocks_m - 1) ? mlen - offset : BLOCK_SIZE;
-            xor_block(c_buffer, m + offset, r_size);
-            memcpy(c + offset, c_buffer, r_size);
+            xor_block(buffer, m + offset, r_size);
+            memcpy(c + offset, buffer, r_size);
         }
 
-        if(i < nblocks_c) {
+
+        if(i > 0 && i <= nblocks_c) {
             // Compute tag for ciphertext block
-            get_c_block(tag_buffer, encrypt ? c : m, mlen, i);
-            xor_block(tag_buffer, current_mask, BLOCK_SIZE);
-            xor_block(tag_buffer, next_mask, BLOCK_SIZE);
-            permutation(tag_buffer);
-            xor_block(tag_buffer, current_mask, BLOCK_SIZE);
-            xor_block(tag_buffer, next_mask, BLOCK_SIZE);
-            xor_block(tag, tag_buffer, CRYPTO_ABYTES);
+            get_c_block(buffer, encrypt ? c : m, mlen, i - 1);
+            xor_block(buffer, previous_mask, BLOCK_SIZE);
+            xor_block(buffer, next_mask, BLOCK_SIZE);
+            permutation(buffer);
+            xor_block(buffer, previous_mask, BLOCK_SIZE);
+            xor_block(buffer, next_mask, BLOCK_SIZE);
+            xor_block(tag_buffer, buffer, BLOCK_SIZE);
         }
 
-        // If there is any AD left and i > 0, compute tag for AD block 
-        if(i > 0 && i <= nblocks_ad) {
-            get_ad_block(tag_buffer, ad, adlen, npub, i - 1);
-            xor_block(tag_buffer, previous_mask, BLOCK_SIZE);
-            xor_block(tag_buffer, next_mask, BLOCK_SIZE);
-            permutation(tag_buffer);
-            xor_block(tag_buffer, previous_mask, BLOCK_SIZE);
-            xor_block(tag_buffer, next_mask, BLOCK_SIZE);
-            xor_block(tag, tag_buffer, CRYPTO_ABYTES);
+        // If there is any AD left, compute tag for AD block 
+        if(i + 1 < nblocks_ad) {
+            get_ad_block(buffer, ad, adlen, npub, i + 1);
+            xor_block(buffer, next_mask, BLOCK_SIZE);
+            permutation(buffer);
+            xor_block(buffer, next_mask, BLOCK_SIZE);
+            xor_block(tag_buffer, buffer, BLOCK_SIZE);
         }
 
-        // Cyclically shift the mask buffers 
+        // Cyclically shift the mask buffers
         // Value of next_mask will be computed in the next iteration
         BYTE* const temp = previous_mask;
         previous_mask = current_mask;
@@ -236,6 +173,11 @@ void crypto_aead_impl(
 
         offset += BLOCK_SIZE;
     }
+    // Compute tag
+    xor_block(tag_buffer, expanded_key, BLOCK_SIZE);
+    permutation(tag_buffer);
+    xor_block(tag_buffer, expanded_key, BLOCK_SIZE);
+    memcpy(tag, tag_buffer, CRYPTO_ABYTES);
 }
 
 // Remark: c must be at least mlen + CRYPTO_ABYTES long
@@ -246,12 +188,12 @@ int crypto_aead_encrypt(
   const unsigned char *nsec,
   const unsigned char *npub,
   const unsigned char *k)
-{ 
+{
     (void)nsec;
     *clen = mlen + CRYPTO_ABYTES;
     BYTE tag[CRYPTO_ABYTES];
     crypto_aead_impl(c, tag, m, mlen, ad, adlen, npub, k, 1);
-    memcpy(c + mlen, tag, CRYPTO_ABYTES); 
+    memcpy(c + mlen, tag, CRYPTO_ABYTES);
     return 0;
 }
 
@@ -270,4 +212,40 @@ int crypto_aead_decrypt(
     BYTE tag[CRYPTO_ABYTES];
     crypto_aead_impl(m, tag, c, *mlen, ad, adlen, npub, k, 0);
     return (constcmp(c + *mlen, tag, CRYPTO_ABYTES) == 0) ? 0 : -1;
+}
+
+//Dibuat
+int main() {
+    unsigned char key[CRYPTO_KEYBYTES] = "ABCDEFGHIJK";
+    unsigned char nonce[CRYPTO_NPUBBYTES] = "1234567890";
+    unsigned char plaintext[100] = "Tisna";
+    unsigned char ciphertext[100 + CRYPTO_ABYTES];
+    unsigned char decrypted[100];
+    unsigned char ad[100] = "0";
+    unsigned long long ciphertext_len, decrypted_len;
+    int ret;
+
+    // Encrypt the plaintext
+    ret = crypto_aead_encrypt(ciphertext, &ciphertext_len, plaintext, strlen((char *) plaintext), ad, strlen((char *) ad), NULL, nonce, key);
+    if (ret != 0) {
+        printf("Error: Encryption failed\n");
+        return -1;
+    }
+
+    printf("Ciphertext: ");
+    for (int i = 0; i < ciphertext_len; i++) {
+        printf("%02x", ciphertext[i]);
+    }
+    printf("\n");
+
+    // Decrypt the ciphertext
+    ret = crypto_aead_decrypt(decrypted, &decrypted_len, NULL, ciphertext, ciphertext_len, ad, strlen((char *) ad), nonce, key);
+    if (ret != 0) {
+        printf("Error: Decryption failed\n");
+        return -1;
+    }
+
+    printf("Decrypted plaintext: %s\n", decrypted);
+
+    return 0;
 }
