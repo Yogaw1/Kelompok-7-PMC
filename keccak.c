@@ -22,8 +22,7 @@ const unsigned int KeccakRhoOffsets[nrLanes] = {
 
 #define ROL8(a, offset) ((offset != 0) ? ((((BYTE)a) << offset) ^ (((BYTE)a) >> (sizeof(BYTE)*8-offset))) : a)
 
-void theta(BYTE *A)
-{
+void theta(BYTE *A) {
     unsigned int x, y;
     BYTE C[5], D[5];
 
@@ -39,15 +38,13 @@ void theta(BYTE *A)
             A[index(x, y)] ^= D[x];
 }
 
-void rho(BYTE *A)
-{
+void rho(BYTE *A) {
     for(unsigned int x=0; x<5; x++)
         for(unsigned int y=0; y<5; y++)
             A[index(x, y)] = ROL8(A[index(x, y)], KeccakRhoOffsets[index(x, y)]);
 }
 
-void pi(BYTE *A)
-{
+void pi(BYTE *A) {
     BYTE tempA[25];
 
     for(unsigned int x=0; x<5; x++)
@@ -58,8 +55,7 @@ void pi(BYTE *A)
             A[index(0*x+1*y, 2*x+3*y)] = tempA[index(x, y)];
 }
 
-void chi(BYTE *A)
-{
+void chi(BYTE *A) {
     unsigned int x, y;
     BYTE C[5];
 
@@ -71,13 +67,11 @@ void chi(BYTE *A)
     }
 }
 
-void iota(BYTE *A, unsigned int indexRound)
-{
+void iota(BYTE *A, unsigned int indexRound) {
     A[index(0, 0)] ^= KeccakRoundConstants[indexRound];
 }
 
-void KeccakP200Round(BYTE *state, unsigned int indexRound)
-{
+void KeccakP200Round(BYTE *state, unsigned int indexRound) {
     theta(state);
     rho(state);
     pi(state);
@@ -85,8 +79,7 @@ void KeccakP200Round(BYTE *state, unsigned int indexRound)
     iota(state, indexRound);
 }
 
-void permutation(BYTE* state)
-{
+void permutation(BYTE* state) {
     for(unsigned int i=0; i<maxNrRounds; i++)
         KeccakP200Round(state, i);
 }

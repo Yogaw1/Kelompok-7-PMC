@@ -2,16 +2,14 @@
 #include "crypto_aead.h"
 #include <string.h>
 #include "elephant_200.h"
-#include <stdlib.h> //
-#include <stdio.h> //
+#include <stdlib.h>
+#include <stdio.h> 
 
-BYTE rotl(BYTE b)
-{
+BYTE rotl(BYTE b) {
     return (b << 1) | (b >> 7);
 }
 
-int constcmp(const BYTE* a, const BYTE* b, SIZE length)
-{
+int constcmp(const BYTE* a, const BYTE* b, SIZE length) {
     BYTE r = 0;
 
     for (SIZE i = 0; i < length; ++i)
@@ -21,16 +19,14 @@ int constcmp(const BYTE* a, const BYTE* b, SIZE length)
 
 // State should be BLOCK_SIZE bytes long
 // Note: input may be equal to output
-void lfsr_step(BYTE* output, BYTE* input)
-{
+void lfsr_step(BYTE* output, BYTE* input) {
     BYTE temp = rotl(input[0]) ^ rotl(input[2]) ^ (input[13] << 1);
     for(SIZE i = 0; i < BLOCK_SIZE - 1; ++i)
         output[i] = input[i + 1];
     output[BLOCK_SIZE - 1] = temp;
 }
 
-void xor_block(BYTE* state, const BYTE* block, SIZE size)
-{
+void xor_block(BYTE* state, const BYTE* block, SIZE size) {
     for(SIZE i = 0; i < size; ++i)
         state[i] ^= block[i];
 }
@@ -38,8 +34,7 @@ void xor_block(BYTE* state, const BYTE* block, SIZE size)
 // Write the ith assocated data block to "output".
 // The nonce is prepended and padding is added as required.
 // adlen is the length of the associated data in bytes
-void get_ad_block(BYTE* output, const BYTE* ad, SIZE adlen, const BYTE* npub, SIZE i)
-{
+void get_ad_block(BYTE* output, const BYTE* ad, SIZE adlen, const BYTE* npub, SIZE i) {
     SIZE len = 0;
     // First block contains nonce
     // Remark: nonce may not be longer then BLOCK_SIZE
@@ -70,8 +65,7 @@ void get_ad_block(BYTE* output, const BYTE* ad, SIZE adlen, const BYTE* npub, SI
 
 // Return the ith assocated data block.
 // clen is the length of the ciphertext in bytes
-void get_c_block(BYTE* output, const BYTE* c, SIZE clen, SIZE i)
-{
+void get_c_block(BYTE* output, const BYTE* c, SIZE clen, SIZE i) {
     const SIZE block_offset = i * BLOCK_SIZE;
     // If clen is divisible by BLOCK_SIZE, add an additional padding block
     if(block_offset == clen) {
@@ -214,7 +208,6 @@ int crypto_aead_decrypt(
     return (constcmp(c + *mlen, tag, CRYPTO_ABYTES) == 0) ? 0 : -1;
 }
 
-//Dibuat
 int main() {
     unsigned char key[CRYPTO_KEYBYTES] = "ABCDEFGHIJK";
     unsigned char nonce[CRYPTO_NPUBBYTES] = "1234567890";
